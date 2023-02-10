@@ -8,6 +8,7 @@ import ctranslate2
 class Accentor:
     _hf_repo = "theodotus/ukrainian-accentor-transformer@v0.1"
     
+    max_len = 50
     split_tokens = set([".",",","!","?"])
 
     _init_config = {
@@ -69,8 +70,9 @@ class Accentor:
 
         tokenized_sentences = self.sp.encode(clean_sentences, out_type=str)
         splitted_sentences = self._split_punctuation(tokenized_sentences)
+        short_sentences = self._split_long(splitted_sentences)
 
-        translation_batch, join_list = self._to_translation_batch(splitted_sentences)
+        translation_batch, join_list = self._to_translation_batch(short_sentences)
         results = self.model.translate_batch(translation_batch, **self._run_config)
         accented_tokens = [result.hypotheses[0] for result in results]
 
@@ -86,11 +88,11 @@ class Accentor:
     def _split_punctuation(self, tokenized_sentences: List[List[str]]) -> List[List[List[str]]]:
         splitted_sentences = []
         for tokenized in tokenized_sentences:
-            splitted = self._split_sentence(tokenized)
+            splitted = self._split_punctuation_sentence(tokenized)
             splitted_sentences.append(splitted)
         return splitted_sentences
 
-    def _split_sentence(self, tokenized: List[str]) -> List[List[str]]:
+    def _split_punctuation_sentence(self, tokenized: List[str]) -> List[List[str]]:
         splitted = []
         start_idx = 0
         for idx, token in enumerate(tokenized, start = 1):
@@ -101,6 +103,38 @@ class Accentor:
             if (start_idx < len(tokenized)):
                 splitted.append(tokenized[start_idx:])
         return splitted
+
+    def _split_long(self, splitted_sentences: List[List[List[str]]]) -> List[List[List[str]]]:
+        short_sentences = []
+        for tokenized in splitted_sentences:
+            short = self._split_long_sentence(tokenized)
+            short_sentences.append(short)
+        return short_sentences
+
+    def _split_long_sentence(self, splitted: List[List[str]]) -> List[List[str]]:
+        short = []
+        for sentence in splitted:
+            if (len(sentence) < self.max_len):
+                short.append(sentence)
+            else:
+                middle_idx = self._find_middle_space(sentence)
+                short.append(sentence[:middle_idx])
+                short.append(sentence[middle_idx:])
+        return short
+
+    @staticmethod
+    def _find_middle_space(sentence: List[str]) -> int:
+        middle_idx = len(sentence) // 2
+        max_shift = len(sentence) // 10
+        for i in range(max_shift):
+            left_idx = middle_idx-i
+            right_idx = middle_idx+i
+            if (sentence[left_idx][0] == "▁"):
+                return left_idx
+            if (sentence[right_idx][0] == "▁"):
+                return right_idx
+        else:
+            return middle_idx
 
     def _to_translation_batch(self, splitted_sentences: List[List[List[str]]]) -> Tuple[List[List[str]], List[int]]:
         join_list = [len(sentence) for sentence in splitted_sentences]
